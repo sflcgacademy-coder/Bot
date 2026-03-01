@@ -97,8 +97,8 @@ app.post('/execute_xp_command', async (req, res) => {
     
     console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username} (${organization}): ${xp_change > 0 ? '+' : ''}${xp_change} XP`);
     
-    // Try to process command - wait for Roblox response
-    const timeout = 30000; // 30 seconds
+    // Wait for Roblox response (max 30 seconds)
+    const timeout = 30000;
     const startTime = Date.now();
     
     while (Date.now() - startTime < timeout) {
@@ -106,12 +106,15 @@ app.post('/execute_xp_command', async (req, res) => {
         
         if (!cmd) {
             // Command was deleted (shouldn't happen)
+            console.log(`[COMMAND] ⚠️ Command ${command_id} disappeared from queue`);
             break;
         }
         
         if (cmd.status === 'completed') {
             // Success!
             pendingCommands.delete(command_id);
+            
+            console.log(`[COMMAND] ✅ Command ${command_id} completed successfully`);
             
             return res.json({
                 success: true,
@@ -128,49 +131,26 @@ app.post('/execute_xp_command', async (req, res) => {
             // Failed
             pendingCommands.delete(command_id);
             
+            console.log(`[COMMAND] ❌ Command ${command_id} failed: ${cmd.error}`);
+            
             return res.status(500).json({
                 success: false,
                 error: cmd.error || 'Unknown error in Roblox'
             });
         }
         
-        // Warte 100ms
+        // Wait 100ms before checking again
         await new Promise(resolve => setTimeout(resolve, 100));
     }
     
-    // Timeout - check if server was ever online during this period
-    const serverWasOnlineDuringWait = isGameServerOnline();
+    // Timeout after 30 seconds
+    pendingCommands.delete(command_id);
+    console.log(`[COMMAND] ⏱️ Timeout for command ${command_id} - no response from Roblox`);
     
-    if (serverWasOnlineDuringWait) {
-        // Server is online but command timed out - this is unusual
-        // Keep command in queue for retry
-        console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}, but server is online - keeping in queue for retry`);
-        
-        return res.json({
-            success: true,
-            username: username,
-            organization: organization,
-            previous_xp: 0,
-            new_xp: 0,
-            xp_change: xp_change,
-            queued: true,
-            message: 'Command timed out but will retry when server polls again'
-        });
-    } else {
-        // Server is offline - queue for when it comes online
-        console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}, server is offline - queued for later`);
-        
-        return res.json({
-            success: true,
-            username: username,
-            organization: organization,
-            previous_xp: 0,
-            new_xp: 0,
-            xp_change: xp_change,
-            queued: true,
-            message: 'Command queued - will process when game server comes online'
-        });
-    }
+    return res.status(504).json({
+        success: false,
+        error: 'Timeout - Roblox game server did not respond. Is the game running and is a player online?'
+    });
 });
 
 // ==================== ROBLOX GAME ENDPOINTS ====================
