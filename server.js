@@ -13,7 +13,7 @@ app.use(cors());
 // ==================== CONFIGURATION ====================
 
 // !!! WICHTIG: Ändere diese Werte !!!
-const SECRET_KEY = "CHANGE_THIS_SECRET_KEY_123456";  // Muss gleich sein wie in Discord Bot!
+const SECRET_KEY = "uhj498534u8r9305ur9GIJRGOEUHFE8949gj30";  // Muss gleich sein wie in Discord Bot!
 const ROBLOX_UNIVERSE_ID = "YOUR_UNIVERSE_ID";  // Deine Roblox Universe ID (optional)
 const ROBLOX_API_KEY = "YOUR_ROBLOX_OPEN_CLOUD_API_KEY";  // Von Creator Hub (optional)
 
