@@ -22,6 +22,16 @@ const SECRET_KEY = "uhj498534u8r9305ur9GIJRGOEUHFE8949gj30";  // Muss gleich sei
 // Pending commands queue (wartet auf Roblox response)
 const pendingCommands = new Map();
 
+// Track last poll time to know if game server is online
+let lastPollTime = 0;
+const POLL_TIMEOUT = 10000; // 10 seconds - if no poll in this time, server is offline
+
+// ==================== SERVER STATUS ====================
+
+function isGameServerOnline() {
+    return (Date.now() - lastPollTime) < POLL_TIMEOUT;
+}
+
 // ==================== HEALTH CHECKS ====================
 
 app.get('/health', (req, res) => {
@@ -74,6 +84,28 @@ app.post('/execute_xp_command', async (req, res) => {
     
     console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username} (${organization}): ${xp_change > 0 ? '+' : ''}${xp_change} XP`);
     
+    // Check if game server is online
+    const serverOnline = isGameServerOnline();
+    
+    if (!serverOnline) {
+        // No game server online - queue command for later
+        console.log(`[COMMAND] ⚠️ No game server online, command queued for later processing`);
+        
+        return res.json({
+            success: true,
+            username: username,
+            organization: organization,
+            previous_xp: 0,
+            new_xp: 0,
+            xp_change: xp_change,
+            queued: true,
+            message: 'Command queued - will be processed when game server comes online'
+        });
+    }
+    
+    // Game server is online - wait for response
+    console.log(`[COMMAND] ✅ Game server online, waiting for response...`);
+    
     // Warte auf Roblox response (max 30 Sekunden)
     const timeout = 30000;
     const startTime = Date.now();
@@ -91,7 +123,8 @@ app.post('/execute_xp_command', async (req, res) => {
                 organization: cmd.result.organization,
                 previous_xp: cmd.result.previous_xp,
                 new_xp: cmd.result.new_xp,
-                xp_change: cmd.result.xp_change
+                xp_change: cmd.result.xp_change,
+                queued: false
             });
         }
         
@@ -109,13 +142,18 @@ app.post('/execute_xp_command', async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 100));
     }
     
-    // Timeout
-    pendingCommands.delete(command_id);
-    console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}`);
+    // Timeout - but command stays queued for later processing
+    console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}, but keeping in queue`);
     
-    return res.status(504).json({
-        success: false,
-        error: 'Timeout - Roblox game server did not respond. Is the game running?'
+    return res.json({
+        success: true,
+        username: username,
+        organization: organization,
+        previous_xp: 0,
+        new_xp: 0,
+        xp_change: xp_change,
+        queued: true,
+        message: 'Command queued - processing timeout, will retry when server available'
     });
 });
 
@@ -129,6 +167,9 @@ app.post('/poll_commands', (req, res) => {
     if (secret_key !== SECRET_KEY) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
+    
+    // Update last poll time - server is online!
+    lastPollTime = Date.now();
     
     // Finde pending commands
     const commands = [];
