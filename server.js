@@ -23,13 +23,26 @@ const SECRET_KEY = "uhj498534u8r9305ur9GIJRGOEUHFE8949gj30";  // Muss gleich sei
 const pendingCommands = new Map();
 
 // Track last poll time to know if game server is online
-let lastPollTime = 0;
+let lastPollTime = 0; // Start at 0 - will be set on first poll
 const POLL_TIMEOUT = 10000; // 10 seconds - if no poll in this time, server is offline
 
 // ==================== SERVER STATUS ====================
 
 function isGameServerOnline() {
-    return (Date.now() - lastPollTime) < POLL_TIMEOUT;
+    // If never polled, server is offline
+    if (lastPollTime === 0) {
+        return false;
+    }
+    
+    const timeSinceLastPoll = Date.now() - lastPollTime;
+    const isOnline = timeSinceLastPoll < POLL_TIMEOUT;
+    
+    // Log for debugging
+    if (!isOnline) {
+        console.log(`[SERVER] Offline (last poll: ${Math.floor(timeSinceLastPoll / 1000)}s ago)`);
+    }
+    
+    return isOnline;
 }
 
 // ==================== HEALTH CHECKS ====================
@@ -84,34 +97,17 @@ app.post('/execute_xp_command', async (req, res) => {
     
     console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username} (${organization}): ${xp_change > 0 ? '+' : ''}${xp_change} XP`);
     
-    // Check if game server is online
-    const serverOnline = isGameServerOnline();
-    
-    if (!serverOnline) {
-        // No game server online - queue command for later
-        console.log(`[COMMAND] ⚠️ No game server online, command queued for later processing`);
-        
-        return res.json({
-            success: true,
-            username: username,
-            organization: organization,
-            previous_xp: 0,
-            new_xp: 0,
-            xp_change: xp_change,
-            queued: true,
-            message: 'Command queued - will be processed when game server comes online'
-        });
-    }
-    
-    // Game server is online - wait for response
-    console.log(`[COMMAND] ✅ Game server online, waiting for response...`);
-    
-    // Warte auf Roblox response (max 30 Sekunden)
-    const timeout = 30000;
+    // Try to process command - wait for Roblox response
+    const timeout = 30000; // 30 seconds
     const startTime = Date.now();
     
     while (Date.now() - startTime < timeout) {
         const cmd = pendingCommands.get(command_id);
+        
+        if (!cmd) {
+            // Command was deleted (shouldn't happen)
+            break;
+        }
         
         if (cmd.status === 'completed') {
             // Success!
@@ -142,19 +138,39 @@ app.post('/execute_xp_command', async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 100));
     }
     
-    // Timeout - but command stays queued for later processing
-    console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}, but keeping in queue`);
+    // Timeout - check if server was ever online during this period
+    const serverWasOnlineDuringWait = isGameServerOnline();
     
-    return res.json({
-        success: true,
-        username: username,
-        organization: organization,
-        previous_xp: 0,
-        new_xp: 0,
-        xp_change: xp_change,
-        queued: true,
-        message: 'Command queued - processing timeout, will retry when server available'
-    });
+    if (serverWasOnlineDuringWait) {
+        // Server is online but command timed out - this is unusual
+        // Keep command in queue for retry
+        console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}, but server is online - keeping in queue for retry`);
+        
+        return res.json({
+            success: true,
+            username: username,
+            organization: organization,
+            previous_xp: 0,
+            new_xp: 0,
+            xp_change: xp_change,
+            queued: true,
+            message: 'Command timed out but will retry when server polls again'
+        });
+    } else {
+        // Server is offline - queue for when it comes online
+        console.log(`[COMMAND] ⏱️ Timeout for command ${command_id}, server is offline - queued for later`);
+        
+        return res.json({
+            success: true,
+            username: username,
+            organization: organization,
+            previous_xp: 0,
+            new_xp: 0,
+            xp_change: xp_change,
+            queued: true,
+            message: 'Command queued - will process when game server comes online'
+        });
+    }
 });
 
 // ==================== ROBLOX GAME ENDPOINTS ====================
