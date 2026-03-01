@@ -10,7 +10,7 @@ app.use(cors());
 
 // ==================== CONFIGURATION ====================
 
-const SECRET_KEY = "CHANGE_THIS_SECRET_KEY_123456";  // Muss gleich sein!
+const SECRET_KEY = "uhj498534u8r9305ur9GIJRGOEUHFE8949gj30";  // Muss gleich sein!
 
 // Pending commands queue (wartet auf Roblox response)
 const pendingCommands = new Map();
