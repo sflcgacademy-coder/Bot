@@ -50,7 +50,7 @@ app.get('/', (req, res) => {
 app.post('/execute_xp_command', async (req, res) => {
     console.log('[COMMAND] Request from Discord:', req.body);
     
-    const { username, xp_change, secret_key, command_id } = req.body;
+    const { username, organization, xp_change, secret_key, command_id } = req.body;
     
     // Check secret key
     if (secret_key !== SECRET_KEY) {
@@ -58,20 +58,21 @@ app.post('/execute_xp_command', async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    if (!username || xp_change === undefined || !command_id) {
-        return res.status(400).json({ error: 'Missing parameters' });
+    if (!username || !organization || xp_change === undefined || !command_id) {
+        return res.status(400).json({ error: 'Missing parameters (need username, organization, xp_change, command_id)' });
     }
     
     // Speichere Command für Roblox
     pendingCommands.set(command_id, {
         command_id,
         username,
+        organization,
         xp_change,
         timestamp: Date.now(),
         status: 'pending'
     });
     
-    console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username}: ${xp_change > 0 ? '+' : ''}${xp_change} XP`);
+    console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username} (${organization}): ${xp_change > 0 ? '+' : ''}${xp_change} XP`);
     
     // Warte auf Roblox response (max 30 Sekunden)
     const timeout = 30000;
@@ -87,6 +88,7 @@ app.post('/execute_xp_command', async (req, res) => {
             return res.json({
                 success: true,
                 username: cmd.result.username,
+                organization: cmd.result.organization,
                 previous_xp: cmd.result.previous_xp,
                 new_xp: cmd.result.new_xp,
                 xp_change: cmd.result.xp_change
@@ -135,6 +137,7 @@ app.post('/poll_commands', (req, res) => {
             commands.push({
                 command_id: cmd.command_id,
                 username: cmd.username,
+                organization: cmd.organization,
                 xp_change: cmd.xp_change
             });
         }
@@ -151,7 +154,7 @@ app.post('/poll_commands', (req, res) => {
 app.post('/report_result', (req, res) => {
     console.log('[RESULT] From Roblox:', req.body);
     
-    const { command_id, success, username, previous_xp, new_xp, xp_change, error, secret_key } = req.body;
+    const { command_id, success, username, organization, previous_xp, new_xp, xp_change, error, secret_key } = req.body;
     
     // Check secret key
     if (secret_key !== SECRET_KEY) {
@@ -171,8 +174,8 @@ app.post('/report_result', (req, res) => {
     
     if (success) {
         cmd.status = 'completed';
-        cmd.result = { username, previous_xp, new_xp, xp_change };
-        console.log(`[RESULT] ✅ Command ${command_id} succeeded: ${username} ${previous_xp} → ${new_xp}`);
+        cmd.result = { username, organization, previous_xp, new_xp, xp_change };
+        console.log(`[RESULT] ✅ Command ${command_id} succeeded: ${username} (${organization}) ${previous_xp} → ${new_xp}`);
     } else {
         cmd.status = 'failed';
         cmd.error = error;
