@@ -1,5 +1,4 @@
 // Railway Server Proxy for XP System
-// Receives commands from Discord Bot, forwards to Roblox game
 
 const express = require('express');
 const cors = require('cors');
