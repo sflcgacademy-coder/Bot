@@ -116,17 +116,33 @@ app.post('/execute_xp_command', async (req, res) => {
 
 // Roblox pollt für neue Commands
 app.post('/poll_commands', (req, res) => {
-    const { secret_key } = req.body;
+    const { secret_key, server_id } = req.body;
     
     // Check secret key
     if (secret_key !== SECRET_KEY) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    // Finde pending commands
+    const currentTime = Date.now();
+    const LOCK_TIMEOUT = 30000; // 30 seconds
+    
+    // Finde pending commands that are not locked or have expired locks
     const commands = [];
     for (const [id, cmd] of pendingCommands.entries()) {
         if (cmd.status === 'pending') {
+            // Check if command is locked to another server
+            if (cmd.locked_to_server && cmd.locked_to_server !== server_id) {
+                // Check if lock has expired
+                if (currentTime - cmd.lock_timestamp < LOCK_TIMEOUT) {
+                    continue; // Skip - locked to another server
+                }
+                // Lock expired, we can take it
+            }
+            
+            // Lock this command to this server
+            cmd.locked_to_server = server_id;
+            cmd.lock_timestamp = currentTime;
+            
             const commandToSend = {
                 command_id: cmd.command_id,
                 username: cmd.username,
@@ -143,7 +159,7 @@ app.post('/poll_commands', (req, res) => {
     }
     
     if (commands.length > 0) {
-        console.log(`[POLL] Sending ${commands.length} pending commands to Roblox`);
+        console.log(`[POLL] Sending ${commands.length} pending command(s) to server ${server_id || 'unknown'}`);
     }
     
     res.json({ commands });
