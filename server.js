@@ -37,7 +37,7 @@ app.get('/', (req, res) => {
 app.post('/execute_xp_command', async (req, res) => {
     console.log('[COMMAND] Request from Discord:', req.body);
     
-    const { username, organization, xp_change, secret_key, command_id } = req.body;
+    const { username, organization, xp_change, secret_key, command_id, user_id } = req.body;
     
     // Check secret key
     if (secret_key !== SECRET_KEY) {
@@ -49,17 +49,23 @@ app.post('/execute_xp_command', async (req, res) => {
         return res.status(400).json({ error: 'Missing parameters (need username, organization, xp_change, command_id)' });
     }
     
-    // Speichere Command für Roblox
-    pendingCommands.set(command_id, {
+    // Speichere Command für Roblox (including user_id if provided)
+    const commandData = {
         command_id,
         username,
         organization,
         xp_change,
         timestamp: Date.now(),
         status: 'pending'
-    });
+    };
     
-    console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username} (${organization}): ${xp_change > 0 ? '+' : ''}${xp_change} XP`);
+    if (user_id !== undefined && user_id !== null) {
+        commandData.user_id = user_id;
+    }
+    
+    pendingCommands.set(command_id, commandData);
+    
+    console.log(`[COMMAND] ✅ Queued command ${command_id} for ${username} (${organization}): ${xp_change > 0 ? '+' : ''}${xp_change} XP${user_id ? ` (user_id: ${user_id})` : ''}`);
     
     // Warte auf Roblox response (max 30 Sekunden)
     const timeout = 30000;
@@ -121,12 +127,18 @@ app.post('/poll_commands', (req, res) => {
     const commands = [];
     for (const [id, cmd] of pendingCommands.entries()) {
         if (cmd.status === 'pending') {
-            commands.push({
+            const commandToSend = {
                 command_id: cmd.command_id,
                 username: cmd.username,
                 organization: cmd.organization,
                 xp_change: cmd.xp_change
-            });
+            };
+            
+            if (cmd.user_id !== undefined && cmd.user_id !== null) {
+                commandToSend.user_id = cmd.user_id;
+            }
+            
+            commands.push(commandToSend);
         }
     }
     
